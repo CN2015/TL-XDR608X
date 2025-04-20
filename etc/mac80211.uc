@@ -91,22 +91,29 @@ for (let phy_name, phy in board.wlan) {
 			id += `\nset ${s}.radio='${radio.index}'`;
 
 		print(`set ${s}=wifi-device
-set ${s}.type='mac80211'
-set ${s}.${id}
-set ${s}.band='${band_name}'
-set ${s}.channel='${channel}'
-set ${s}.htmode='${htmode}'
-set ${s}.country='${country || "CN"}'
-set ${s}.num_global_macaddr='${num_global_macaddr || ''}'
-set ${s}.disabled='0'
 
-set ${si}=wifi-iface
-set ${si}.device='${name}'
-set ${si}.network='lan'
-set ${si}.mode='ap'
-set ${si}.ssid='${defaults?.ssid || "OpenWrt"}'
-set ${si}.encryption='${defaults?.encryption || "none"}'
-set ${si}.key='${defaults?.key || ""}'
+               if [ "$mode_band" = "5g" ]; then
+               ssid_5ghz="_5G"
+               else
+               ssid_5ghz="_2G"
+               fi
+
+               set ${s}.type='mac80211'
+               set ${s}.${id}
+               set ${s}.band='${band_name}'
+               set ${s}.channel='${channel}'
+               set ${s}.htmode='${htmode}'
+               set ${s}.country='${country || "CN"}'
+               set ${s}.num_global_macaddr='${num_global_macaddr || ''}'
+               set ${s}.disabled='0'
+
+               set ${si}=wifi-iface
+               set ${si}.device='${name}'
+               set ${si}.network='lan'
+               set ${si}.mode='ap'
+               set ${si}.ssid=TP-LINK_$(cat /sys/class/ieee80211/${dev}/macaddress|awk -F ":" '{print $5""$6 }'| tr a-z A-Z)${ssid_5ghz} 
+               set ${si}.encryption='${defaults?.encryption || "none"}'
+               set ${si}.key='${defaults?.key || ""}'
 
 `);
 		config[name] = {};
