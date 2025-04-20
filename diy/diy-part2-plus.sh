@@ -95,3 +95,15 @@ cp -r feeds/theme/luci-theme-argon feeds/luci/themes/luci-theme-argon
 
 #rm -rf feeds/luci/applications/luci-app-openclash/*
 #cp -af feeds/small/luci-app-openclash/*  feeds/luci/applications/luci-app-openclash/
+
+# 修改TTYD界面
+cat > package/base-files/files/etc/banner << EOF
+  _______                     ________        __
+ |       |.-----.-----.-----.|  |  |  |.----.|  |_
+ |   -   ||  _  |  -__|     ||  |  |  ||   _||   _|
+ |_______||   __|_____|__|__||________||__|  |____|
+          |__| W I R E L E S S   F R E E D O M
+ -----------------------------------------------------
+ %D %V, %C
+ -----------------------------------------------------
+EOF
