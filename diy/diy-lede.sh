@@ -2,7 +2,7 @@
 # =================================================================
 # DIY Script for TL-XDR6088 LEDE Firmware
 # 功能: 自定义配置 + WiFi SSID 注入 + 插件改名 + 自定义 Banner
-# 作者: sos07
+# 作者: CN2014
 # 最后更新: $(date +%Y-%m-%d)
 # =================================================================
 set -e  # 遇错立即退出，便于排查问题
@@ -18,17 +18,17 @@ sed -i 's/openwrt-23.05/openwrt-24.10/g' ./feeds.conf.default
 echo "📦 下载配置文件..."
 
 mkdir -p files/etc/config
-wget -qO- https://raw.githubusercontent.com/liandu2024/clash/refs/heads/main/main_router/openclash   > files/etc/config/openclash
-wget -qO- https://raw.githubusercontent.com/sos801107/TL-XDR608X/refs/heads/main/etc/mosdns   > files/etc/config/mosdns
-wget -qO- https://raw.githubusercontent.com/sos801107/TL-XDR608X/refs/heads/main/etc/smartdns   > files/etc/config/smartdns
+wget -qO- https://raw.githubusercontent.com/liandu2024/clash/refs/heads/main/main_router/openclash     > files/etc/config/openclash
+wget -qO- https://raw.githubusercontent.com/sos801107/TL-XDR608X/refs/heads/main/etc/mosdns     > files/etc/config/mosdns
+wget -qO- https://raw.githubusercontent.com/sos801107/TL-XDR608X/refs/heads/main/etc/smartdns     > files/etc/config/smartdns
 
 mkdir -p files/etc
-wget -qO- https://raw.githubusercontent.com/sos801107/TL-XDR608X/refs/heads/main/etc/opkg.conf   > files/etc/opkg.conf
+wget -qO- https://raw.githubusercontent.com/sos801107/TL-XDR608X/refs/heads/main/etc/opkg.conf     > files/etc/opkg.conf
 mkdir -p files/etc/opkg
-wget -qO- https://raw.githubusercontent.com/sos801107/TL-XDR608X/refs/heads/main/etc/distfeeds.conf   > files/etc/opkg/distfeeds.conf
+wget -qO- https://raw.githubusercontent.com/sos801107/TL-XDR608X/refs/heads/main/etc/distfeeds.conf     > files/etc/opkg/distfeeds.conf
 
 mkdir -p files/root
-wget -qO- https://raw.githubusercontent.com/sos801107/TL-XDR608X/refs/heads/main/etc/.profile   > files/root/.profile
+wget -qO- https://raw.githubusercontent.com/sos801107/TL-XDR608X/refs/heads/main/etc/.profile     > files/root/.profile
 
 # =================================================================
 # ⚙️ 系统基础配置
@@ -68,6 +68,8 @@ rm -rf feeds/luci/themes/luci-theme-argon
 rm -rf feeds/luci/applications/luci-app-argon-config
 rm -rf feeds/packages/libs/libfido2
 rm -rf feeds/packages/net/shadowsocks-libev
+# 🔧 【新增】移除 feeds/small 中的 shadowsocks-libev（避免 asciidoc 依赖错误）
+rm -rf feeds/small/shadowsocks-libev
 
 # =================================================================
 # 📦 稀疏克隆函数
@@ -107,25 +109,36 @@ function merge_package() {
 # =================================================================
 echo "📦 克隆第三方插件..."
 
-git_sparse_clone main https://github.com/Openwrt-Passwall/openwrt-passwall   luci-app-passwall
-git_sparse_clone dev https://github.com/vernesong/OpenClash   luci-app-openclash
+git_sparse_clone main https://github.com/Openwrt-Passwall/openwrt-passwall     luci-app-passwall
+git_sparse_clone dev https://github.com/vernesong/OpenClash     luci-app-openclash
 
 # Go 1.24.2 依赖
 rm -rf feeds/packages/lang/golang
-git clone https://github.com/sbwml/packages_lang_golang   -b 26.x feeds/packages/lang/golang
+git clone https://github.com/sbwml/packages_lang_golang     -b 26.x feeds/packages/lang/golang
 
 # =================================================================
-# 🔧 应用补丁
+# 🔧 应用补丁（已修复：移除失效补丁 + 容错处理）
 # =================================================================
 echo "🔧 应用补丁..."
 
-pushd feeds/luci > /dev/null
-   curl -s https://raw.githubusercontent.com/oppen321/path/refs/heads/main/Firewall/0001-luci-mod-status-firewall-disable-legacy-firewall-rul.patch | patch -p1
-popd
+# ⚠️ Firewall 补丁链接已失效 (404)，暂时跳过
+# 如需禁用旧版防火墙规则，可在 LuCI 界面手动配置
 
-pushd . > /dev/null
-   curl -sSL https://raw.githubusercontent.com/Jaykwok2999/turboacc/luci/add_turboacc.sh -o add_turboacc.sh && bash add_turboacc.sh
-popd
+# TurboACC 脚本（带容错处理，失败不中断编译）
+pushd . > /dev/null 2>&1 || true
+TURBOACC_URL="https://raw.githubusercontent.com/Jaykwok2999/turboacc/luci/add_turboacc.sh"
+if curl -sL "$TURBOACC_URL" | grep -q "^#!/bin/bash\|^#!/bin/sh"; then
+    curl -sL "$TURBOACC_URL" -o add_turboacc.sh
+    if bash add_turboacc.sh; then
+        echo "  ✅ TurboACC 脚本执行成功"
+    else
+        echo "  ⚠️ TurboACC 脚本执行失败，跳过..."
+    fi
+    rm -f add_turboacc.sh
+else
+    echo "  ⚠️ TurboACC 脚本链接无效或已失效，跳过..."
+fi
+popd > /dev/null 2>&1 || true
 
 # =================================================================
 # 📡 【新增】注入自定义 mac80211.sh (WiFi SSID: TP-LINK_XXXX)
