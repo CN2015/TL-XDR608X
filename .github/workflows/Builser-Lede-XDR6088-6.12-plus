@@ -14,7 +14,7 @@ on:
 env:
   REPO_URL: https://github.com/coolsnowwolf/lede.git
   REPO_BRANCH: master
-  CONFIG_FILE: config/xdr6088-lede.config
+  CONFIG_FILE: config/xdr6088-plus.config
   DIY_SCRIPT: diy/diy-lede.sh
   CLASH_KERNEL: amd64
   CACHE_TOOLCHAIN: true
