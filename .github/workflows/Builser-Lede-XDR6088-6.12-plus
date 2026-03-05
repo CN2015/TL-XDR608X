@@ -1,4 +1,4 @@
-name: Builser-Lede-XDR6088-6.12
+name: Builser-Lede-XDR6088-6.12-plus
 
 #CI计划
 on:
