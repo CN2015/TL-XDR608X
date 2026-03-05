@@ -1,15 +1,22 @@
 #!/bin/bash
 # =================================================================
 # DIY Script for TL-XDR6088 LEDE Firmware
-# 功能: 自定义配置 + WiFi SSID 注入
+# 功能: 自定义配置 + WiFi SSID 注入 + 插件改名 + 自定义 Banner
+# 作者: sos07
+# 最后更新: $(date +%Y-%m-%d)
 # =================================================================
+set -e  # 遇错立即退出，便于排查问题
 
+# =================================================================
 # 🔧 LUCI 版本切换
+# =================================================================
 sed -i 's/openwrt-23.05/openwrt-24.10/g' ./feeds.conf.default
 
 # =================================================================
 # 📦 下载配置文件到 files 目录
 # =================================================================
+echo "📦 下载配置文件..."
+
 mkdir -p files/etc/config
 wget -qO- https://raw.githubusercontent.com/liandu2024/clash/refs/heads/main/main_router/openclash   > files/etc/config/openclash
 wget -qO- https://raw.githubusercontent.com/sos801107/TL-XDR608X/refs/heads/main/etc/mosdns   > files/etc/config/mosdns
@@ -26,6 +33,8 @@ wget -qO- https://raw.githubusercontent.com/sos801107/TL-XDR608X/refs/heads/main
 # =================================================================
 # ⚙️ 系统基础配置
 # =================================================================
+echo "⚙️ 应用系统基础配置..."
+
 # 修改默认 IP
 sed -i "s/192\.168\.[0-9]*\.[0-9]*/192.168.1.1/g" ./package/base-files/files/bin/config_generate
 # 修改默认主机名
@@ -40,11 +49,13 @@ sed -i '/set luci.main.mediaurlbase=\/luci-static\/bootstrap/d' feeds/luci/theme
 sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/luci/Makefile
 sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/luci-nginx/Makefile
 # 作者信息
-sed -i "s/DISTRIB_REVISION='*.*'/DISTRIB_REVISION=' By sos07'/g" package/base-files/files/etc/openwrt_release
+sed -i "s/DISTRIB_REVISION='*.*'/DISTRIB_REVISION=' CN2014'/g" package/base-files/files/etc/openwrt_release
 
 # =================================================================
 # 🗑️ 移除冲突包
 # =================================================================
+echo "🗑️ 移除冲突包..."
+
 rm -rf feeds/packages/net/{xray-core,v2ray-core,v2ray-geodata,sing-box,adguardhome,mosdns,v2ray-geodata,v2ray-geoip,chinadns-ng,dns2socks,dns2tcp,microsocks,alist}
 rm -rf feeds/packages/utils/v2dat
 rm -rf feeds/third_party/{luci-app-LingTiGameAcc,luci-app-smartdns,smartdns}
@@ -94,6 +105,8 @@ function merge_package() {
 # =================================================================
 # 📦 添加第三方插件
 # =================================================================
+echo "📦 克隆第三方插件..."
+
 git_sparse_clone main https://github.com/Openwrt-Passwall/openwrt-passwall   luci-app-passwall
 git_sparse_clone dev https://github.com/vernesong/OpenClash   luci-app-openclash
 
@@ -104,24 +117,20 @@ git clone https://github.com/sbwml/packages_lang_golang   -b 26.x feeds/packages
 # =================================================================
 # 🔧 应用补丁
 # =================================================================
-pushd feeds/luci
-   curl -s https://raw.githubusercontent.com/oppen321/path/refs/heads/main/Firewall/0001-luci-mod-status-firewall-disable-legacy-firewall-rul.patch   | patch -p1
+echo "🔧 应用补丁..."
+
+pushd feeds/luci > /dev/null
+   curl -s https://raw.githubusercontent.com/oppen321/path/refs/heads/main/Firewall/0001-luci-mod-status-firewall-disable-legacy-firewall-rul.patch | patch -p1
 popd
 
-pushd
-   curl -sSL https://raw.githubusercontent.com/Jaykwok2999/turboacc/luci/add_turboacc.sh   -o add_turboacc.sh && bash add_turboacc.sh
+pushd . > /dev/null
+   curl -sSL https://raw.githubusercontent.com/Jaykwok2999/turboacc/luci/add_turboacc.sh -o add_turboacc.sh && bash add_turboacc.sh
 popd
-
-# =================================================================
-# 🔄 更新 feeds
-# =================================================================
-./scripts/feeds update -a
-./scripts/feeds install -a
 
 # =================================================================
 # 📡 【新增】注入自定义 mac80211.sh (WiFi SSID: TP-LINK_XXXX)
 # =================================================================
-echo "🔧 应用自定义 WiFi SSID 配置 (TP-LINK_前缀)..."
+echo "📡 应用自定义 WiFi SSID 配置 (TP-LINK_前缀)..."
 
 # 1. 确保目标目录存在
 mkdir -p package/kernel/mac80211/files/lib/wifi/
@@ -174,3 +183,88 @@ EOF
 chmod +x files/etc/uci-defaults/99-wifi-ssid
 echo "✅ uci-defaults 脚本已添加: 99-wifi-ssid"
 echo "🎯 WiFi 名称格式: TP-LINK_XXXX_5G / TP-LINK_XXXX_2G"
+
+# =================================================================
+# 🎨 【新增】批量修改 LuCI 插件显示名称（精简中文）
+# =================================================================
+echo "🎨 应用插件名称汉化/精简..."
+
+# 定义替换规则（使用数组避免重复 egrep 调用）
+declare -A NAME_MAP=(
+    ["aMule设置"]="电驴下载"
+    ["网络存储"]="NAS"
+    ["Turbo ACC 网络加速"]="网络加速"
+    ["实时流量监测"]="流量"
+    ["KMS 服务器"]="KMS激活"
+    ["TTYD 终端"]="TTYD终端"
+    ["USB 打印服务器"]="打印服务"
+    ["Web 管理"]="首页管理"
+    ["管理权"]="改密码"
+    ["带宽监控"]="带宽监视"
+    ["设置向导"]="向导"
+    ["挂载 SMB 网络共享"]="SMB网络共享"
+    ["解锁网易云灰色歌曲"]="解锁网易云"
+    ["AirPlay 2 音频接收器"]="音频接收器"
+    ["MWAN3 分流助手"]="分流助手"
+    ["UU游戏加速器"]="游戏加速"
+    ["ShadowSocksR Plus+"]="SSR Plus+"
+    ["广告屏蔽大师 Plus+"]="屏广大师"
+    ["iKoolProxy 滤广告"]="过滤广告"
+    ["DDNSTO 远程控制"]="远程控制"
+    ["Argon 主题设置"]="主题设置"
+    ["AdGuard Home"]="AdGuard"
+    ["Alist 文件列表"]="网盘搜刮"
+    ["Alist"]="网盘搜刮"
+    ["SoftEther VPN 服务器"]="SoftEther"
+    ["OpenVPN 服务器"]="OpenVPN"
+    ["IPSec VPN 服务器"]="IPSec VPN"
+    ["PPTP VPN 服务器"]="PPTP VPN"
+    ["Online User"]="在线用户"
+    ["备份与升级"]="备份/升级"
+    ["UPnP"]="即插即用"
+    ["监控"]="带宽监视"
+    ["Lucky大吉"]="全能工具"
+    ["udpxy"]="电视组播"
+)
+
+# 遍历执行替换（只修改 LuCI 相关文件格式）
+for old_name in "${!NAME_MAP[@]}"; do
+    new_name="${NAME_MAP[$old_name]}"
+    # 查找包含旧名称的文件（限制文件类型，提升效率）
+    files=$(grep -rl "\"$old_name\"" ./package ./feeds 2>/dev/null | grep -E "\.(lua|po|zh-cn)$" || true)
+    if [ -n "$files" ]; then
+        echo "$files" | xargs -r sed -i "s/\"$old_name\"/\"$new_name\"/g"
+        echo "  ✅ '$old_name' → '$new_name'"
+    fi
+done
+
+# =================================================================
+# 🏷️ 【新增】自定义固件 Banner（SSH 登录欢迎信息）
+# =================================================================
+echo "🏷️ 应用自定义 Banner..."
+
+cat > package/base-files/files/etc/banner << 'EOF'
+  _______                     ________        __
+ |       |.-----.-----.-----.|  |  |  |.----.|  |_
+ |   -   ||  _  |  -__|     ||  |  |  ||   _||   _|
+ |_______||   __|_____|__|__||________||__|  |____|
+          |__| W I R E L E S S   F R E E D O M
+ -----------------------------------------------------
+ %D %V, %C
+ -----------------------------------------------------
+ 
+ 🎯 TL-XDR6088 定制固件 | BY: CN2014  QQ:38663790
+ 🔗 管理地址: 192.168.1.1  |  用户: root  |  密码: 空
+ 💡 首次使用请修改默认密码，并配置 WiFi
+EOF
+
+# =================================================================
+# 🔄 更新 feeds（原有逻辑，必须放在最后）
+# =================================================================
+echo "🔄 更新并安装 feeds..."
+
+./scripts/feeds update -a
+./scripts/feeds install -a
+
+echo "✅ DIY 脚本执行完成！"
+echo "🚀 下一步: 执行 make defconfig && make -j$(nproc) 开始编译"
