@@ -240,13 +240,19 @@ declare -A NAME_MAP=(
     ["udpxy"]="电视组播"
 )
 
-# 遍历执行替换（只修改 LuCI 相关文件格式）
+# 遍历执行替换（使用 | 作为分隔符 + 转义特殊字符）
 for old_name in "${!NAME_MAP[@]}"; do
     new_name="${NAME_MAP[$old_name]}"
+    
+    # 转义特殊字符：/ & \ （避免 sed 解析错误）
+    old_name_escaped=$(echo "$old_name" | sed 's/[\/&]/\\&/g')
+    new_name_escaped=$(echo "$new_name" | sed 's/[\/&]/\\&/g')
+    
     # 查找包含旧名称的文件（限制文件类型，提升效率）
     files=$(grep -rl "\"$old_name\"" ./package ./feeds 2>/dev/null | grep -E "\.(lua|po|zh-cn)$" || true)
     if [ -n "$files" ]; then
-        echo "$files" | xargs -r sed -i "s/\"$old_name\"/\"$new_name\"/g"
+        # 🔧 使用 | 作为分隔符，避免 / 冲突
+        echo "$files" | xargs -r sed -i "s|\"$old_name_escaped\"|\"$new_name_escaped\"|g"
         echo "  ✅ '$old_name' → '$new_name'"
     fi
 done
