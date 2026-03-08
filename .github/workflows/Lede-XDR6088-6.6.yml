@@ -27,8 +27,7 @@ env:
   REPO_BRANCH: master
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: config/TP-LINK_XDR6088.config
-  DIY_P1_SH: diy/diy-part1-mini.sh
-  DIY_P2_SH: diy/diy-part2-mini.sh
+  DIY_SCRIPT: diy/diy-all.sh
   UPLOAD_BIN_DIR: false
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
