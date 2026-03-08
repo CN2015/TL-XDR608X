@@ -1,164 +1,241 @@
-
 #
-# https://github.com/P3TERX/Actions-OpenWrt
+# 项目地址: https://github.com/P3TERX/Actions-OpenWrt
+# 文件: .github/workflows/openwrt-bulder.yml
+# 描述: 使用 GitHub Actions 自动编译 OpenWrt 固件
 #
-# File: .github/workflows/openwrt-bulder.yml
-# Description: Build OpenWrt using GitHub Actions
+# 版权 (c) 2019-2024 P3TERX <https://p3terx.com>
 #
-# Copyright (c) 2019-2024 P3TERX <https://p3terx.com>
-#
-# This is free software, licensed under the MIT License.
-# See /LICENSE for more information.
+# 本软件为自由软件，依据 MIT 许可证授权。
+# 详见 /LICENSE 获取更多信息。
 #
 
-name: Lede-XDR6088-6.6-plus
+# 🔧 工作流名称（显示在 Actions 面板）
+name: Lede-XDR6088-6.6-测试版
 
-#CI计划
+# 📅 触发条件配置
 on:
-  #自动编译：当Auto-Clean运行完成后
+  # 🔁 自动编译：当 "Auto-Clean" 工作流运行完成后触发
   workflow_run:
     workflows: ["Auto-Clean"]
     types:
       - completed
-  #手动编译
+  
+  # 👆 手动触发：支持在 Actions 页面点击 "Run workflow" 手动编译
   workflow_dispatch:
+
+# 🌐 全局环境变量（所有步骤通用）
 env:
+  # 📦 源码仓库地址（Lean 的 OpenWrt 分支）
   REPO_URL: https://github.com/coolsnowwolf/lede
+  # 🌿 源码分支名称
   REPO_BRANCH: master
+  # 📄 Feed 配置文件路径
   FEEDS_CONF: feeds.conf.default
+  # ⚙️ 编译配置文件路径（.config 预配置）
   CONFIG_FILE: config/TP-LINK_XDR6088.config
+  # 🔧 自定义 DIY 脚本路径（合并版脚本）
   DIY_SCRIPT: diy/diy-all.sh
+  # 📁 是否上传 bin 目录到 Artifact（false=不上传，节省空间）
   UPLOAD_BIN_DIR: false
+  # 📦 是否上传编译好的固件到 Artifact
   UPLOAD_FIRMWARE: true
+  # 🚀 是否创建 GitHub Release 并发布固件
   UPLOAD_RELEASE: true
+  # 🕐 时区设置（用于日志时间戳）
   TZ: Asia/Shanghai
 
+# 🏗️ 任务定义
 jobs:
   build:
+    # 💻 运行环境：Ubuntu 22.04 LTS
     runs-on: ubuntu-22.04
 
+    # 📋 执行步骤
     steps:
-    - name: Checkout
+    
+    # ▸ 步骤 1: 检出仓库代码
+    - name: 📥 检出仓库代码
       uses: actions/checkout@main
 
-    - name: Initialization environment
+    # ▸ 步骤 2: 初始化编译环境（安装依赖包）
+    - name: 🛠️ 初始化编译环境
       env:
-        DEBIAN_FRONTEND: noninteractive
+        DEBIAN_FRONTEND: noninteractive  # 避免 apt 交互提示
       run: |
+        # 清理无用组件，释放磁盘空间
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
         sudo docker image prune --all --force
+        
+        # 更新包列表并安装编译依赖（关键！缺少会导致编译失败）
         sudo -E apt-get -qq update
         sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+        
+        # 清理自动安装的无用依赖
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
+        
+        # 设置时区
         sudo timedatectl set-timezone "$TZ"
+        
+        # 创建工作目录并授权
         sudo mkdir -p /workdir
         sudo chown $USER:$GROUPS /workdir
-    - name: Clone source code
+
+    # ▸ 步骤 3: 克隆 OpenWrt 源码
+    - name: 📦 克隆 OpenWrt 源码
       working-directory: /workdir
       run: |
+        # 查看磁盘空间
         df -hT $PWD
+        # 克隆指定分支的源码
         git clone $REPO_URL -b $REPO_BRANCH openwrt
+        # 创建软链接，方便后续步骤访问
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
-    - name: Load custom feeds
-      run: |
-        [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
-        chmod +x $DIY_P1_SH
-        cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P1_SH
-   # - name: Update feeds
-   #   run: cd openwrt && ./scripts/feeds update -a
 
-   # - name: Install feeds
-  #    run: cd openwrt && ./scripts/feeds install -a
-      
-    - name: Update & Install feeds
+    # ▸ 步骤 4: 加载自定义 Feed 源配置
+    - name: 🔗 加载自定义 Feed 源
+      run: |
+        # 如果存在自定义 feeds.conf.default，则替换默认文件
+        [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
+        # 赋予 DIY 脚本执行权限
+        chmod +x $DIY_SCRIPT
+        # 进入源码目录执行自定义脚本（添加源+下载配置）
+        cd openwrt
+        $GITHUB_WORKSPACE/$DIY_SCRIPT
+
+    # ▸ 步骤 5: 更新并安装 Feed + 内核版本强制指定
+    - name: 🔄 更新 Feed 并强制内核版本
       working-directory: ./openwrt
       run: |
+        # 更新所有 Feed 源
         ./scripts/feeds update -a
+        # 安装 Feed 中的插件
         ./scripts/feeds install -a
         
-        ## 强制默认r2s/r4s/r5s编译内核为6.6  
+        ## 🔧 强制 MediaTek 平台编译内核为 6.6 版本
         sed -i "s/KERNEL_PATCHVER:=*.*/KERNEL_PATCHVER:=6.6/g" target/linux/mediatek/Makefile
-        sed -i "s/KERNEL_PATCHVER=*.*/KERNEL_PATCHVER=6.6/g" target/linux/mediatek/Makefile        
-        sed -i "s/DISTRIB_DESCRIPTION='*.*'/DISTRIB_DESCRIPTION='TL-XDR6088-$(date +%Y%m%d)'/g" package/lean/default-settings/files/zzz-default-settings           
-      
-    - name: Load custom configuration
+        sed -i "s/KERNEL_PATCHVER=*.*/KERNEL_PATCHVER=6.6/g" target/linux/mediatek/Makefile
+        
+        ## 🏷️ 修改固件版本描述（显示编译日期）
+        sed -i "s/DISTRIB_DESCRIPTION='*.*'/DISTRIB_DESCRIPTION='TL-XDR6088-$(date +%Y%m%d)'/g" package/lean/default-settings/files/zzz-default-settings
+
+    # ▸ 步骤 6: 加载自定义配置 & 执行第二部分 DIY 脚本
+    - name: ⚙️ 加载自定义配置并执行定制脚本
       run: |
+        # 移动预设 files 目录到源码中（覆盖默认配置）
         [ -e files ] && mv files openwrt/files
+        # 移动预编译配置文件 .config
         [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-        chmod +x $DIY_P2_SH
+        # 执行 DIY 脚本第二部分（插件替换/汉化/配置等）
+        chmod +x $DIY_SCRIPT
         cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P2_SH
-    - name: Download package
+        $GITHUB_WORKSPACE/$DIY_SCRIPT
+
+    # ▸ 步骤 7: 预下载所有源码包（避免编译时下载失败）
+    - name: 📥 预下载软件包
       id: package
       run: |
         cd openwrt
+        # 生成 .config 配置
         make defconfig
+        # 多线程下载所有依赖包
         make download -j8
+        # 检查并删除下载失败的残缺文件（<1024 字节）
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
-    - name: Compile the firmware
+
+    # ▸ 步骤 8: 开始编译固件
+    - name: 🔨 编译固件
       id: compile
       run: |
         cd openwrt
-        echo -e "$(nproc) thread compile"
+        # 输出当前线程数
+        echo -e "$(nproc) 线程并行编译"
+        # 多线程编译，失败则降级单线程重试，仍失败则输出详细日志
         make -j$(nproc) || make -j1 || make -j1 V=s
+        
+        # 标记编译成功
         echo "status=success" >> $GITHUB_OUTPUT
+        
+        # 提取目标设备名称（用于文件名）
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
+        
+        # 生成时间戳（用于固件命名）
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
-    - name: Check space usage
+
+    # ▸ 步骤 9: 检查磁盘空间使用情况（调试用）
+    - name: 💾 检查磁盘空间
       if: (!cancelled())
       run: df -hT
 
-    - name: Assemble Artifact
+    # ▸ 步骤 10: 整理输出文件（固件 + 配置）
+    - name: 📦 整理编译产物
       id: assemble_artifact
       run: |
+        # 清理并创建输出目录
         rm -rf ./ARM_Out
         mkdir -p ./ARM_Out/
+        # 备份编译配置
         cp -a ./openwrt/.config ./ARM_Out/xdr6088.config
         
+        # 🔢 定义获取 MD5 前 10 位的函数
         getmd5()
         {
-        md5sum=`md5sum $1`
-        md5=`echo ${md5sum% *}`
-        md5=`echo ${md5:0:10}`
+          md5sum=`md5sum $1`
+          md5=`echo ${md5sum% *}`
+          md5=`echo ${md5:0:10}`
         }
         
+        # 🎯 目标固件路径（请根据实际目标平台调整）
         rom=openwrt/bin/targets/mediatek/filogic/openwrt-mediatek-filogic-tplink_tl-xdr6088-squashfs-sysupgrade.bin
-        getmd5 $rom        
-        cp -a $rom ./ARM_Out/LEDE-TP-Link_TL-XDR6088-6.6-$(date +"%Y.%m.%d-%H%M").bin             
-    - name: Upload Firmwares
+        
+        # 计算 MD5 并复制固件，重命名为带日期版本
+        getmd5 $rom
+        cp -a $rom ./ARM_Out/LEDE-TP-Link_TL-XDR6088-6.6-$(date +"%Y.%m.%d-%H%M").bin
+
+    # ▸ 步骤 11: 上传固件到 Artifact（供手动下载）
+    - name: 📤 上传固件到 Artifact
       uses: actions/upload-artifact@main
       with:
         name: XDR6088-OpenWrt_6.6
         path: ARM_Out/*.bin
 
-    - name: Upload config
+    # ▸ 步骤 12: 上传编译配置到 Artifact
+    - name: 📤 上传配置文件到 Artifact
       uses: actions/upload-artifact@main
       with:
-        name: xdr6088-config
+        name: xdr6088-配置文件
         path: ARM_Out/xdr6088.config
- 
-    - name: Upload Packages
+
+    # ▸ 步骤 13: 上传编译生成的 ipk 软件包
+    - name: 📤 上传软件包到 Artifact
       uses: actions/upload-artifact@main
       with:
-        name: xdr6088-Packages
-        path: openwrt/bin/packages 
-        
-    - name: Generate Tag & Release Name
+        name: xdr6088-软件包
+        path: openwrt/bin/packages
+
+    # ▸ 步骤 14: 生成 Release 标签和名称
+    - name: 🏷️ 生成 Release 名称和标签
       id: generate_name
       run: |
+        # 生成时间戳作为 tag
         time=$(date +%Y%m%d%H%M%S)
         release_tag="$time"
-        release_name="LEDE-TL-XDR6088-6.6内核-plus-$(date +%Y%m%d)"
+        # 生成可读的 Release 名称
+        release_name="LEDE-TL-XDR6088-6.6内核-增强版-$(date +%Y%m%d)"
         echo "release_name=$release_name" >> $GITHUB_OUTPUT
-        echo "release_tag=$release_tag" >> $GITHUB_OUTPUT       
-    - name: Create Release & Upload
+        echo "release_tag=$release_tag" >> $GITHUB_OUTPUT
+
+    # ▸ 步骤 15: 创建 GitHub Release 并上传固件
+    - name: 🚀 创建 Release 并发布固件
       uses: ncipollo/release-action@v1.14.0
       with:
+        # 要上传的固件文件
         artifacts: ARM_Out/*.bin
+        # Release 显示名称
         name: ${{ steps.generate_name.outputs.release_name }}
+        # Git 标签（用于版本管理）
         tag: ${{ steps.generate_name.outputs.release_tag }}
+        # GitHub 自动提供的认证 Token
         token: ${{ secrets.GITHUB_TOKEN }}
