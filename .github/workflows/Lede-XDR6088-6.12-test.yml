@@ -192,7 +192,7 @@ jobs:
         
         # 计算 MD5 并复制固件，重命名为带日期版本
         getmd5 $rom
-        cp -a $rom ./ARM_Out/LEDE-TP-Link_TL-XDR6088-6.6-$(date +"%Y.%m.%d-%H%M").bin
+        cp -a $rom ./ARM_Out/LEDE-TP-Link_TL-XDR6088-6.12-$(date +"%Y.%m.%d-%H%M").bin
 
     # ▸ 步骤 11: 上传固件到 Artifact（供手动下载）
     - name: 📤 上传固件到 Artifact
