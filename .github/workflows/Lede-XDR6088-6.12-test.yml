@@ -198,7 +198,7 @@ jobs:
     - name: 📤 上传固件到 Artifact
       uses: actions/upload-artifact@main
       with:
-        name: XDR6088-OpenWrt_6.6
+        name: XDR6088-OpenWrt_6.12
         path: ARM_Out/*.bin
 
     # ▸ 步骤 12: 上传编译配置到 Artifact
@@ -223,7 +223,7 @@ jobs:
         time=$(date +%Y%m%d%H%M%S)
         release_tag="$time"
         # 生成可读的 Release 名称
-        release_name="LEDE-TL-XDR6088-6.6内核-增强版-$(date +%Y%m%d)"
+        release_name="LEDE-TL-XDR6088-6.12内核-增强版-$(date +%Y%m%d)"
         echo "release_name=$release_name" >> $GITHUB_OUTPUT
         echo "release_tag=$release_tag" >> $GITHUB_OUTPUT
 
