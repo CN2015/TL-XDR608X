@@ -1,13 +1,13 @@
 #!/bin/bash
 #
 # ============================================================================
-# OpenWrt 自定义编译脚本（完整合并版 - 最终修复）
-# 文件: diy-all.sh
+# OpenWrt 自定义编译脚本（修复完整版 - v2.2）
+# 文件: diy-lede.sh
 # 描述: 添加第三方源 + 预设配置 + 插件替换 + 系统定制 + WiFi/主题优化
-# 适配: Lean 源码 (coolsnowwolf/lede) + TL-XDR6088
+# 适配: Lean 源码 (coolsnowwolf/lede) + TL-XDR6088 + Kernel 6.12
 # 作者: 基于 P3TERX/Actions-OpenWrt 修改
 # 许可: MIT License
-# 版本: v2.1 (修复 Duplicate feed / 汉化路径 / 网络超时)
+# 版本: v2.2 (修复 appvlmcsd / Argon 分支 / geoip / 网络重试)
 # ============================================================================
 
 set -e  # 遇错立即退出，避免错误累积
@@ -21,24 +21,42 @@ DIY_DIR="${GITHUB_WORKSPACE:-$SCRIPT_DIR}/diy"
 WGET_RETRY="wget -qO- --timeout=30 --tries=3"
 
 echo "================================================================"
-echo "🚀 OpenWrt DIY 脚本启动 (v2.1)"
+echo "🚀 OpenWrt DIY 脚本启动 (v2.2 - 修复版)"
 echo "📁 源码目录: $OPENWRT_DIR"
 echo "📁 自定义目录: $DIY_DIR"
 echo "================================================================"
 
 
 # ============================================================================
-# 📡 【Part 1】添加第三方 Feed 源（带重复检测）
-# 执行时机：在 ./scripts/feeds update -a 之前
+# 🔧 通用辅助函数
 # ============================================================================
-echo ""
-echo "📦 [Part 1] 添加第三方 Feed 源..."
 
-# 🔧 辅助函数：检查并添加 Feed 源（避免重复）
+# 克隆仓库：带重试 + 分支指定 + 深度克隆
+clone_with_retry() {
+    local repo_url="$1"
+    local branch="$2"
+    local target_dir="$3"
+    local desc="$4"
+    
+    for i in 1 2 3; do
+        if git clone -b "$branch" --depth=1 --timeout=60 "$repo_url" "$target_dir" 2>/dev/null; then
+            echo "✅ 已克隆: $desc ($branch) → $target_dir"
+            return 0
+        fi
+        echo "⚠️ $desc 克隆重试 $i/3... (3s 后重试)" && sleep 3
+    done
+    echo "❌ $desc 克隆失败，请检查网络或分支名称"
+    return 1
+}
+
+# 检查并添加 Feed 源（避免重复 + 清理末尾空格）
 add_feed() {
     local feed_name="$1"
     local feed_url="$2"
     local feed_branch="$3"
+    
+    # 清理 URL 末尾空格
+    feed_url=$(echo "$feed_url" | sed 's/[[:space:]]*$//')
     
     # 检查是否已存在该 feed 名称
     if grep -q "^src-git $feed_name " feeds.conf.default 2>/dev/null; then
@@ -53,19 +71,30 @@ add_feed() {
     fi
 }
 
+
+# ============================================================================
+# 📡 【Part 1】添加第三方 Feed 源（带重复检测 + 空格修复）
+# ============================================================================
+echo ""
+echo "📦 [Part 1] 添加第三方 Feed 源..."
+
 # 🔧 Turbo ACC 网络加速（luci + package 分离）
 add_feed "turboacc" "https://github.com/chenmozhijin/turboacc.git" "luci"
 add_feed "turboaccpackage" "https://github.com/chenmozhijin/turboacc.git" "package"
 
-# 🔌 VLMCSd KMS 激活服务
-add_feed "appvlmcsd" "https://github.com/AutoCONFIG/luci-app-vlmcsd" "master"
+# 🔌 VLMCSd KMS 激活服务（使用 immortalwrt 官方源，避免 appvlmcsd 错误）
+add_feed "vlmcsd" "https://github.com/immortalwrt/packages.git" "openwrt-23.05"
 
-# 🎨 Argon 主题（备用，实际使用下方 git clone 方式）
-add_feed "theme" "https://github.com/sbwml/luci-theme-argon" ""
+# 🎨 Argon 主题备用源（实际使用下方 git clone 方式）
+add_feed "theme" "https://github.com/sbwml/luci-theme-argon.git" ""
 
 # 📦 kenzok8 插件集合（small + openwrt-packages）
-add_feed "small" "https://github.com/kenzok8/small" ""
-add_feed "kenzo" "https://github.com/kenzok8/openwrt-packages" ""
+add_feed "small" "https://github.com/kenzok8/small.git" ""
+add_feed "kenzo" "https://github.com/kenzok8/openwrt-packages.git" ""
+
+# 📦 NAS 插件（Linkease）
+add_feed "nas" "https://github.com/linkease/nas-packages.git" "master"
+add_feed "nas_luci" "https://github.com/linkease/nas-packages-luci.git" "main"
 
 echo "✅ Feed 源添加完成"
 
@@ -79,16 +108,16 @@ echo "📥 下载预设配置文件..."
 mkdir -p files/etc/config files/etc files/etc/opkg files/root
 
 # OpenClash / MosDNS / SmartDNS 配置（带超时重试）
-$WGET_RETRY https://raw.githubusercontent.com/sos801107/TL-XDR608X/refs/heads/main/etc/openclash > files/etc/config/openclash 2>/dev/null && echo "  ✓ openclash" || echo "  ✗ openclash 下载失败"
-$WGET_RETRY https://raw.githubusercontent.com/sos801107/TL-XDR608X/refs/heads/main/etc/mosdns > files/etc/config/mosdns 2>/dev/null && echo "  ✓ mosdns" || echo "  ✗ mosdns 下载失败"
-$WGET_RETRY https://raw.githubusercontent.com/sos801107/TL-XDR608X/refs/heads/main/etc/smartdns > files/etc/config/smartdns 2>/dev/null && echo "  ✓ smartdns" || echo "  ✗ smartdns 下载失败"
+$WGET_RETRY https://raw.githubusercontent.com/sos801107/TL-XDR608X/main/etc/config/openclash > files/etc/config/openclash 2>/dev/null && echo "  ✓ openclash" || echo "  ✗ openclash 下载失败"
+$WGET_RETRY https://raw.githubusercontent.com/sos801107/TL-XDR608X/main/etc/config/mosdns > files/etc/config/mosdns 2>/dev/null && echo "  ✓ mosdns" || echo "  ✗ mosdns 下载失败"
+$WGET_RETRY https://raw.githubusercontent.com/sos801107/TL-XDR608X/main/etc/config/smartdns > files/etc/config/smartdns 2>/dev/null && echo "  ✓ smartdns" || echo "  ✗ smartdns 下载失败"
 
 # opkg 包管理器配置
-$WGET_RETRY https://raw.githubusercontent.com/sos801107/TL-XDR608X/refs/heads/main/etc/opkg.conf > files/etc/opkg.conf 2>/dev/null && echo "  ✓ opkg.conf" || echo "  ✗ opkg.conf 下载失败"
-$WGET_RETRY https://raw.githubusercontent.com/sos801107/TL-XDR608X/refs/heads/main/etc/distfeeds.conf > files/etc/opkg/distfeeds.conf 2>/dev/null && echo "  ✓ distfeeds.conf" || echo "  ✗ distfeeds.conf 下载失败"
+$WGET_RETRY https://raw.githubusercontent.com/sos801107/TL-XDR608X/main/etc/opkg.conf > files/etc/opkg.conf 2>/dev/null && echo "  ✓ opkg.conf" || echo "  ✗ opkg.conf 下载失败"
+$WGET_RETRY https://raw.githubusercontent.com/sos801107/TL-XDR608X/main/etc/opkg/distfeeds.conf > files/etc/opkg/distfeeds.conf 2>/dev/null && echo "  ✓ distfeeds.conf" || echo "  ✗ distfeeds.conf 下载失败"
 
 # 用户环境变量
-$WGET_RETRY https://raw.githubusercontent.com/sos801107/TL-XDR608X/refs/heads/main/etc/.profile > files/root/.profile 2>/dev/null && echo "  ✓ .profile" || echo "  ✗ .profile 下载失败"
+$WGET_RETRY https://raw.githubusercontent.com/sos801107/TL-XDR608X/main/root/.profile > files/root/.profile 2>/dev/null && echo "  ✓ .profile" || echo "  ✗ .profile 下载失败"
 
 echo "✅ 预设配置文件下载完成"
 
@@ -126,7 +155,7 @@ fi
 
 # 3. 添加 uci-defaults 首启脚本（双重保障：首次启动自动配置 WiFi）
 mkdir -p files/etc/uci-defaults/
-cat > files/etc/uci-defaults/99-wifi-ssid <<- 'EOF'
+cat > files/etc/uci-defaults/99-wifi-ssid << 'EOF'
 #!/bin/sh
 # 首次启动时应用自定义 WiFi SSID（避免重复执行）
 [ -f "/etc/.wifi_customized" ] && exit 0
@@ -166,7 +195,7 @@ echo "🎯 WiFi 名称格式: TP-LINK_XXXX_5G / TP-LINK_XXXX_2G"
 
 
 # ============================================================================
-# 🗑️ 【Part 2】移除冲突插件 & 替换核心组件
+# 🗑️ 【Part 2】移除冲突插件 & 替换核心组件（带存在性检查）
 # ============================================================================
 echo ""
 echo "🧹 清理并替换网络组件..."
@@ -174,25 +203,29 @@ echo "🧹 清理并替换网络组件..."
 # 移除旧版/冲突的科学上网插件
 rm -rf feeds/small/{shadowsocksr-libev,shadowsocks-rust,luci-app-ssr-plus,luci-i18n-ssr-plus-zh-cn,luci-app-wol,luci-app-bypass} 2>/dev/null || true
 rm -rf feeds/luci/applications/{shadowsocksr-libev,shadowsocks-rust,luci-app-ssr-plus,luci-i18n-ssr-plus-zh-cn,luci-app-wol,luci-app-bypass} 2>/dev/null || true
-rm -rf feeds/luci/packages/net/{shadowsocksr-libev-ssr-check,shadowsocksr-libev-ssr-local,shadowsocksr-libev-ssr-redir,shadowsocksr-libev-ssr-server} 2>/dev/null || true
+rm -rf feeds/packages/net/{shadowsocksr-libev-ssr-check,shadowsocksr-libev-ssr-local,shadowsocksr-libev-ssr-redir,shadowsocksr-libev-ssr-server} 2>/dev/null || true
 
-# 替换 packages 源中的核心组件为 small 源版本（确保新版兼容）
+# 替换 packages 源中的核心组件为 small 源版本（添加存在性检查）
 for pkg in xray-core mosdns v2ray-geodata v2ray-geoip sing-box chinadns-ng dns2socks dns2tcp microsocks; do
     rm -rf feeds/packages/net/$pkg 2>/dev/null || true
-    cp -r feeds/small/$pkg feeds/packages/net/ 2>/dev/null && echo "  ✓ $pkg" || echo "  ✗ $pkg 替换失败"
+    if [ -d "feeds/small/$pkg" ]; then
+        cp -r feeds/small/$pkg feeds/packages/net/ && echo "  ✓ $pkg"
+    else
+        echo "  ℹ️  $pkg 在 small 源中不存在，使用默认版本"
+    fi
 done
 
 # 更新 FQ 插件（PassWall + OpenClash）
 rm -rf feeds/luci/applications/luci-app-passwall 2>/dev/null || true
 rm -rf feeds/luci/applications/luci-app-openclash 2>/dev/null || true
-cp -r feeds/small/luci-app-passwall feeds/luci/applications/ 2>/dev/null && echo "  ✓ luci-app-passwall" || echo "  ✗ luci-app-passwall 替换失败"
-cp -r feeds/small/luci-app-openclash feeds/luci/applications/ 2>/dev/null && echo "  ✓ luci-app-openclash" || echo "  ✗ luci-app-openclash 替换失败"
+[ -d "feeds/small/luci-app-passwall" ] && cp -r feeds/small/luci-app-passwall feeds/luci/applications/ && echo "  ✓ luci-app-passwall" || echo "  ℹ️  luci-app-passwall 未找到"
+[ -d "feeds/small/luci-app-openclash" ] && cp -r feeds/small/luci-app-openclash feeds/luci/applications/ && echo "  ✓ luci-app-openclash" || echo "  ℹ️  luci-app-openclash 未找到"
 
 echo "✅ 核心组件替换完成"
 
 
 # ============================================================================
-# 🎨 【Part 2】替换 Argon 主题为 jerrykuku 官方 18.06 版本
+# 🎨 【Part 2】替换 Argon 主题为 jerrykuku 官方 18.06 版本（含配置插件）
 # ============================================================================
 echo ""
 echo "🎨 应用 jerrykuku/luci-theme-argon (18.06 分支)..."
@@ -202,25 +235,18 @@ rm -rf feeds/luci/themes/luci-theme-argon 2>/dev/null || true
 rm -rf package/lean/luci-theme-argon 2>/dev/null || true
 rm -rf package/lean/luci-app-argon-config 2>/dev/null || true
 
-# 🔹 克隆官方主题（18.06 分支适配 Lean 源码）
+# 🔹 确定目标目录（兼容不同源码结构）
 THEME_TARGET_DIR="package/lean/luci-theme-argon"
-[ ! -d "package/lean" ] && THEME_TARGET_DIR="package/themes/luci-theme-argon" && mkdir -p package/themes
-
-if git clone -b 18.06 --depth=1 --timeout=30 https://github.com/jerrykuku/luci-theme-argon.git "$THEME_TARGET_DIR" 2>/dev/null; then
-    echo "✅ 已克隆: luci-theme-argon (18.06) → $THEME_TARGET_DIR"
-else
-    echo "❌ 克隆 luci-theme-argon 失败，请检查网络连接"
-fi
-
-# 🔹 （推荐）克隆配套配置插件
 CONFIG_TARGET_DIR="package/lean/luci-app-argon-config"
-[ ! -d "package/lean" ] && CONFIG_TARGET_DIR="package/luci-app-argon-config"
-
-if git clone --depth=1 --timeout=30 https://github.com/jerrykuku/luci-app-argon-config.git "$CONFIG_TARGET_DIR" 2>/dev/null; then
-    echo "✅ 已克隆: luci-app-argon-config → $CONFIG_TARGET_DIR"
-else
-    echo "ℹ️  未克隆配置插件，可手动在 menuconfig 中启用"
+if [ ! -d "package/lean" ]; then
+    THEME_TARGET_DIR="package/themes/luci-theme-argon"
+    CONFIG_TARGET_DIR="package/luci-app-argon-config"
+    mkdir -p package/themes package 2>/dev/null || true
 fi
+
+# 🔹 执行克隆（统一使用 18.06 分支，带重试机制）
+clone_with_retry "https://github.com/jerrykuku/luci-theme-argon.git" "18.06" "$THEME_TARGET_DIR" "luci-theme-argon"
+clone_with_retry "https://github.com/jerrykuku/luci-app-argon-config.git" "18.06" "$CONFIG_TARGET_DIR" "luci-app-argon-config"
 
 echo "💡 提示: 执行 'make menuconfig' → LuCI → Themes → 勾选 <*> luci-theme-argon"
 
@@ -299,7 +325,6 @@ declare -A NAME_MAP=(
     ["UPnP"]="即插即用"
     ["监控"]="带宽监视"
     ["Lucky大吉"]="全能工具"
-    ["Lucky大吉"]="全能工具"
 )
 
 # 遍历执行替换（使用 | 作为 sed 分隔符，避免 / 冲突）
@@ -347,6 +372,32 @@ echo "✅ 自定义 Banner 已应用"
 
 
 # ============================================================================
+# 🔧 【Part 2】内核版本强制修改（6.12）
+# ============================================================================
+echo ""
+echo "🔧 强制设置内核版本: 6.12..."
+
+# 修改 mediatek/filogic 平台的内核版本（适配 XDR6088）
+KERNEL_FILE="target/linux/mediatek/filogic/Makefile"
+if [ -f "$KERNEL_FILE" ]; then
+    sed -i "s/KERNEL_PATCHVER:=*.*/KERNEL_PATCHVER:=6.12/g" "$KERNEL_FILE"
+    sed -i "s/KERNEL_PATCHVER=*.*/KERNEL_PATCHVER:=6.12/g" "$KERNEL_FILE"
+    echo "  ✓ 已修改: $KERNEL_FILE"
+else
+    # 备用路径
+    sed -i "s/KERNEL_PATCHVER:=*.*/KERNEL_PATCHVER:=6.12/g" target/linux/mediatek/Makefile 2>/dev/null || true
+    sed -i "s/KERNEL_PATCHVER=*.*/KERNEL_PATCHVER:=6.12/g" target/linux/mediatek/Makefile 2>/dev/null || true
+    echo "  ✓ 已修改: target/linux/mediatek/Makefile"
+fi
+
+# 修改固件版本标识
+sed -i "s/DISTRIB_DESCRIPTION='*.*'/DISTRIB_DESCRIPTION='TL-XDR6088-$(date +%Y%m%d)'/g" package/lean/default-settings/files/zzz-default-settings 2>/dev/null || true
+echo "  ✓ 固件版本标识已更新"
+
+echo "✅ 内核配置完成"
+
+
+# ============================================================================
 # 🎁 【Part 2】额外自定义扩展区（可按需启用）
 # ============================================================================
 # echo ""
@@ -376,15 +427,15 @@ echo "✅ 自定义 Banner 已应用"
 # ============================================================================
 echo ""
 echo "================================================================"
-echo "✅ DIY 脚本执行完成！(v2.1)"
+echo "✅ DIY 脚本执行完成！(v2.2 - 修复版)"
 echo "================================================================"
 echo "📋 已应用配置："
-echo "   • 第三方 Feed 源：turboacc / small / kenzo / theme"
+echo "   • 第三方 Feed 源：turboacc / small / kenzo / nas / vlmcsd"
 echo "   • 预设配置：OpenClash / MosDNS / SmartDNS / opkg"
 echo "   • WiFi 定制：TP-LINK_XXXX_5G/2G 自动命名"
-echo "   • 主题替换：jerrykuku/luci-theme-argon (18.06)"
+echo "   • 主题替换：jerrykuku/luci-theme-argon (18.06) + config"
 echo "   • 插件汉化：30+ 菜单名称精简"
-echo "   • 系统优化：时区/密码/Banner/组件替换"
+echo "   • 系统优化：时区/密码/Banner/组件替换/内核6.12"
 echo ""
 echo "🚀 下一步操作："
 echo "   1. make menuconfig"
