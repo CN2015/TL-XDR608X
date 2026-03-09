@@ -10,7 +10,7 @@
 #
 
 # 🔧 工作流名称（显示在 Actions 面板）
-name: Lede-XDR6088-6.6-测试版
+name: Lede-XDR6088-6.12-测试版
 
 # 📅 触发条件配置
 on:
